@@ -1,12 +1,38 @@
 from flask import Blueprint, request, abort, make_response
 from ..db import db
 from ..models.pet import Pet
+import google.generativeai as genai
+import os 
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 
 bp = Blueprint("pets", __name__, url_prefix="/pets")
 
 @bp.post("")
 def create_pet():
-    pass
+
+    request_body = request.get_json()
+
+    try: 
+        new_pet = Pet.from_dict(request_body)
+        new_name = generate_name(new_pet)
+        request_body["name"]=new_name
+        db.session.add(new_pet)
+        db.session.commit()
+        
+        return new_pet.to_dict(), 201
+    
+    except KeyError as e:
+        abort(make_response({"message": f"missing required value: {e}"}, 400))
+    
+    
+
+def generate_name(pet):
+    model = genai.GenerativeModel("gemini-1.5-flash")
+    input_message = f"Please generate one suitable name based on {pet.animal_type} with a {pet.personality} and a {pet.color} color and remove all description."
+    response = model.generate_content(input_message)
+    response_name = response.text.strip("\n")
+    print(response)
+    return response_name
 
 @bp.get("")
 def get_pets():
