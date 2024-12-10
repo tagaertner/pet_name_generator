@@ -11,20 +11,34 @@ bp = Blueprint("pets", __name__, url_prefix="/pets")
 def create_pet():
 
     request_body = request.get_json()
-
-    try: 
-        new_pet = Pet.from_dict(request_body)
-        new_name = generate_name(new_pet)
-        request_body["name"]=new_name
+    
+    try:
+        temp_pet = Pet(
+            animal_type=request_body["animal_type"],
+            personality=request_body["personality"],
+            color=request_body["color"]
+            )
+        # generate name using ai
+        new_name = generate_name(temp_pet)
+        request_body["name"] = new_name
+        
+        # create new pet with generated name
+        new_pet = Pet(
+            name=new_name,
+            animal_type=request_body.get("animal_type"),
+            personality=request_body.get("personality"),
+            color=request_body.get("color")
+        )
+        
         db.session.add(new_pet)
         db.session.commit()
         
         return new_pet.to_dict(), 201
-    
-    except KeyError as e:
-        abort(make_response({"message": f"missing required value: {e}"}, 400))
-    
-    
+
+    except KeyError as missing_field:
+        abort(make_response({"message": f"Missing required field: {missing_field}"}, 400))
+    except Exception as error:
+        abort(make_response({"message": f"Error creating pet: {str(error)}"}, 500))
 
 def generate_name(pet):
     model = genai.GenerativeModel("gemini-1.5-flash")
