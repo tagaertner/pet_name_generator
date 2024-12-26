@@ -2,51 +2,39 @@ from flask import Blueprint, request, abort, make_response
 from ..db import db
 from ..models.pet import Pet
 import google.generativeai as genai
-import os 
+import os
+
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 
 bp = Blueprint("pets", __name__, url_prefix="/pets")
 
 @bp.post("")
 def create_pet():
-
     request_body = request.get_json()
-    
-    try:
-        temp_pet = Pet(
-            animal_type=request_body["animal_type"],
-            personality=request_body["personality"],
-            color=request_body["color"]
-            )
-        # generate name using ai
-        new_name = generate_name(temp_pet)
-        request_body["name"] = new_name
-        
-        # create new pet with generated name
-        new_pet = Pet(
-            name=new_name,
-            animal_type=request_body.get("animal_type"),
-            personality=request_body.get("personality"),
-            color=request_body.get("color")
-        )
-        
+    request_body["name"] = generate_name(request_body)
+    try: 
+        new_pet = Pet.from_dict(request_body)
         db.session.add(new_pet)
         db.session.commit()
-        
-        return new_pet.to_dict(), 201
 
-    except KeyError as missing_field:
-        abort(make_response({"message": f"Missing required field: {missing_field}"}, 400))
-    except Exception as error:
-        abort(make_response({"message": f"Error creating pet: {str(error)}"}, 500))
+        return make_response(new_pet.to_dict(), 201)
+    
+    except KeyError as e:
+        abort(make_response({"message": f"missing required value: {e}"}, 400))
 
-def generate_name(pet):
-    model = genai.GenerativeModel("gemini-1.5-flash")
-    input_message = f"Please generate one suitable name based on {pet.animal_type} with a {pet.personality} and a {pet.color} color and remove all description."
-    response = model.generate_content(input_message)
-    response_name = response.text.strip("\n")
-    print(response)
-    return response_name
+@bp.patch("/<pet_id>")
+def update_pet_name(pet_id):
+    pet = validate_model(Pet, pet_id)
+    pet_dict = pet.to_dict()
+    new_name = generate_name(pet_dict)
+
+    pet.name = new_name
+    db.session.add(pet)
+    db.session.commit()
+
+    return pet_dict, 201
+
+
 
 @bp.get("")
 def get_pets():
@@ -64,6 +52,18 @@ def get_pets():
 def get_single_pet(pet_id):
     pet = validate_model(Pet,pet_id)
     return pet.to_dict()
+
+def generate_name(request):
+    model = genai.GenerativeModel("gemini-1.5-flash")
+
+    if request["name"]:
+        input_message = f"I have a {request["coloration"]} {request["animal"]} named {request["name"]}. They are very {request["personality"]}. I'm not a huge fan of the name though, could you suggest another? Just the name, nothing else."
+    else:
+        input_message = f"I have a {request["animal"]} who is {request["coloration"]} and {request["personality"]}. Please give me a name for them? Just the name, nothing else."
+
+    response = model.generate_content(input_message)
+    print(response.text)
+    return response.text.strip()
 
 def validate_model(cls,id):
     try:
